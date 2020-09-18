@@ -404,6 +404,7 @@ class BertLayer(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         output_attentions=False,
+        kg_attention=None,
     ):
         self_attention_outputs = self.attention(
             hidden_states,
@@ -428,6 +429,13 @@ class BertLayer(nn.Module):
             )
             attention_output = cross_attention_outputs[0]
             outputs = outputs + cross_attention_outputs[1:]  # add cross attentions if we output attention weights
+
+        if kg_attention is not None:
+            attention_module, attention_input, cross_attention_mask = kg_attention
+            kg_attention_outputs = attention_module(attention_output, attention_mask, head_mask,
+                attention_input, cross_attention_mask, output_attentions=output_attentions)
+            attention_output = kg_attention_outputs[0]
+            outputs = outputs + kg_attention_outputs[1:]  # add cross attentions if we output attention weights
 
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
@@ -457,6 +465,7 @@ class BertEncoder(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
         return_dict=False,
+        kg_attentions=None
     ):
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
@@ -488,10 +497,11 @@ class BertEncoder(nn.Module):
                     encoder_hidden_states,
                     encoder_attention_mask,
                     output_attentions,
+                    kg_attentions[i] if i < len(kg_attentions) else None,
                 )
             hidden_states = layer_outputs[0]
             if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[1],)
+                all_attentions = all_attentions + layer_outputs[1:]
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -766,6 +776,7 @@ class BertModel(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        kg_attentions=None,
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`, defaults to :obj:`None`):
@@ -833,6 +844,7 @@ class BertModel(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            kg_attentions=kg_attentions,
         )
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output)
@@ -1111,6 +1123,7 @@ class BertForMaskedLM(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        kg_attentions=None,
         **kwargs
     ):
         r"""
@@ -1145,6 +1158,7 @@ class BertForMaskedLM(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            kg_attentions=kg_attentions,
         )
 
         sequence_output = outputs[0]
